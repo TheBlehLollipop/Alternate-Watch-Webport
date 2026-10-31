@@ -1,0 +1,58 @@
+{
+ "base": "https://raw.githubusercontent.com/TheBlehLollipop/Alternate-Watch-Webport/v2/",
+ "chunkBytes": 18874368,
+ "chunked": {
+  "port.wasm": {
+   "parts": 45,
+   "size": 835165523
+  },
+  "image.bin": {
+   "parts": 6,
+   "size": 110510080
+  },
+  "game/AlternateWatch/Content/Paks/AlternateWatch-Windows.ucas": {
+   "parts": 21,
+   "size": 391172800
+  },
+  "game/AlternateWatch/Content/Movies/rp_training.bk2": {
+   "parts": 2,
+   "size": 28661168
+  },
+  "game/AlternateWatch/Content/Movies/rp_think.bk2": {
+   "parts": 3,
+   "size": 39129032
+  },
+  "game/AlternateWatch/Content/Movies/crt_vol1_r.bk2": {
+   "parts": 3,
+   "size": 49826324
+  },
+  "game/AlternateWatch/Content/Movies/crt_overthrone.bk2": {
+   "parts": 2,
+   "size": 32331240
+  },
+  "game/AlternateWatch/Content/Movies/rp_stress.bk2": {
+   "parts": 3,
+   "size": 53295928
+  },
+  "game/AlternateWatch/Content/Movies/crt_stress_r.bk2": {
+   "parts": 2,
+   "size": 34289260
+  },
+  "game/AlternateWatch/Content/Movies/crt_think_r.bk2": {
+   "parts": 2,
+   "size": 36052756
+  },
+  "game/AlternateWatch/Content/Movies/crt_distraught.bk2": {
+   "parts": 2,
+   "size": 24706200
+  },
+  "game/AlternateWatch/Content/Movies/crt_mad.bk2": {
+   "parts": 2,
+   "size": 24156244
+  },
+  "game/Engine/Binaries/ThirdParty/Phonon/Win64/phonon.dll": {
+   "parts": 2,
+   "size": 28889544
+  }
+ }
+}

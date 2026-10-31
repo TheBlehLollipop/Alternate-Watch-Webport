@@ -1,0 +1,107 @@
+<!doctype html><meta charset=utf-8><title>Alternate Watch</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+body{color:#cfc;font:13px/1.4 ui-monospace,monospace}
+#game{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,177.78vh);height:min(100vh,56.25vw)}
+#screen{display:block;width:100%;height:100%;outline:none;background:#000}
+#load{position:absolute;left:0;right:0;top:0;padding:12px 16px;background:linear-gradient(#000d,#0000);pointer-events:none}
+#load .st{color:#fc6;margin-bottom:4px}
+#load .row{margin:6px 0}#load .lab{display:flex;justify-content:space-between;color:#9c9;font-size:12px}
+#load .bar{height:8px;background:#232;border:1px solid #353;overflow:hidden}#load .fill{height:100%;width:0;background:#6c6;transition:width .15s}
+#load .ind .fill{width:30%;animation:slide 1.2s linear infinite}@keyframes slide{from{margin-left:-30%}to{margin-left:100%}}
+#dbg{display:none}body.debug #dbg{display:block}body.fpsonly #hud,body.fpsonly #log{display:none}
+#fps{position:absolute;top:8px;right:10px;font-size:22px;font-weight:bold;color:#6f6;text-shadow:0 0 3px #000,0 0 3px #000;pointer-events:none}
+#hud{position:absolute;top:40px;right:10px;max-width:60%;text-align:right;color:#fc6;text-shadow:0 0 3px #000;font-size:12px}
+#hud button{font:inherit;margin-left:8px;background:#222;color:#cfc;border:1px solid #555;cursor:pointer}
+#log{position:absolute;left:0;right:0;bottom:0;height:35%;margin:0;padding:6px 8px;overflow:auto;white-space:pre-wrap;background:#000b;font-size:12px}
+#hint{position:absolute;bottom:6px;right:10px;color:#fff6;font-size:11px;pointer-events:none}body.debug #hint{display:none}
+</style>
+<div id=game>
+  <canvas id=screen width=1920 height=1080 tabindex=0></canvas>
+  <div id=load><div class=st id=lst>starting&hellip;</div></div>
+  <div id=dbg><div id=fps>&ndash; fps</div><div id=hud><span id=st></span><button id=stop>Stop</button></div><pre id=log></pre></div>
+  <div id=hint>press &gt; for debug</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+const L=$('log'),ST=$('st'),LST=$('lst'),B=$('stop'),C=$('screen'),PR=$('load'),FPS=$('fps');
+const DBGKEY='aw_debug'; let debug=0; try{ debug=+localStorage.getItem(DBGKEY)||0; }catch(e){} if(!(debug>=0&&debug<=2)) debug=0;
+let logPending=[];
+const setDebug=mode=>{ debug=mode; document.body.classList.toggle('debug',mode>0); document.body.classList.toggle('fpsonly',mode===1);
+  try{ localStorage.setItem(DBGKEY,String(mode)); }catch(e){} if(mode===2){ flushLog(); L.scrollTop=L.scrollHeight; } };
+addEventListener('keydown',e=>{ if(e.key==='>'){ setDebug((debug+1)%3); e.preventDefault(); e.stopPropagation(); }
+  else if(e.key==='<'){ w.postMessage({t:'prof'}); e.preventDefault(); e.stopPropagation(); } },true);
+setTimeout(()=>$('hint').remove(),8000);
+const w=new Worker('worker.js?v='+Date.now()+(location.search?'&'+location.search.slice(1):''));
+if(C.transferControlToOffscreen){ const oc=C.transferControlToOffscreen(); w.postMessage({t:'canvas',canvas:oc},[oc]); }
+else w.postMessage({t:'canvas',canvas:null});
+const bars={};
+const BOOTKEY='aw_boot_calls', PROFKEY='aw_boot_profile'; let bootTotal=0, prof=null;
+try{ bootTotal=+localStorage.getItem(BOOTKEY)||0; prof=JSON.parse(localStorage.getItem(PROFKEY)||'null'); }catch(e){}
+if(prof&&!(prof.pts&&prof.pts.length>1&&prof.ms>0)) prof=null;
+let loading=true, bootT0=0; const bootPts=[];
+const msAt=c=>{ const P=prof.pts; if(c>=P[P.length-1][0]) return prof.ms; let i=1; while(P[i][0]<c) i++;
+  const [c0,t0]=P[i-1], [c1,t1]=P[i]; return t0+(t1-t0)*(c1>c0?(c-c0)/(c1-c0):0); };
+const mmss=ms=>{ const s=Math.max(0,Math.round(ms/1000)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+const bootText=calls=>{ const now=performance.now(); if(!bootT0) bootT0=now; const el=now-bootT0; bootPts.push([calls,el]);
+  if(prof){ const tm=msAt(calls), frac=Math.min(0.99,tm/prof.ms), pace=tm>2000?el/tm:1, left=(prof.ms-tm)*pace;
+    return { frac, text:(100*frac).toFixed(0)+'% · about '+mmss(left)+' left' }; }
+  if(bootTotal){ const frac=Math.min(0.99,calls/bootTotal); return { frac, text:(100*frac).toFixed(0)+'% · '+mmss(el)+' elapsed' }; }
+  return { frac:null, text:(calls/1e6).toFixed(1)+'M engine calls · '+mmss(el)+' (first run: no estimate yet)' }; };
+const saveBoot=calls=>{ if(!bootT0||!calls) return; const el=performance.now()-bootT0; bootPts.push([calls,el]);
+  const pts=[]; const step=Math.max(1,Math.floor(bootPts.length/200)); for(let i=0;i<bootPts.length;i+=step) pts.push([bootPts[i][0],Math.round(bootPts[i][1])]);
+  pts.push([calls,Math.round(el)]); try{ localStorage.setItem(BOOTKEY,String(calls)); localStorage.setItem(PROFKEY,JSON.stringify({ms:Math.round(el),pts})); }catch(e){} };
+const progress=d=>{
+  if(d.clear){ for(const id of d.clear) if(bars[id]){ bars[id].remove(); delete bars[id]; } return; }
+  if(d.done){ saveBoot(d.calls); loading=false; PR.remove(); return; }
+  if(d.calls!==undefined) Object.assign(d,bootText(d.calls));
+  let b=bars[d.id]; if(!b){ b=bars[d.id]=document.createElement('div'); b.className='row'; b.innerHTML='<div class=lab><span></span><span></span></div><div class=bar><div class=fill></div></div>'; PR.appendChild(b); }
+  b.querySelector('.lab span').textContent=d.label; b.querySelector('.lab span:last-child').textContent=d.text||'';
+  b.querySelector('.bar').classList.toggle('ind',d.frac===null); if(d.frac!==null) b.querySelector('.fill').style.width=(100*d.frac).toFixed(1)+'%'; };
+const LOGLINES=3000; let logN=0, logTimer=0;
+const flushLog=()=>{ logTimer=0; if(debug!==2||!logPending.length) return; const atEnd=L.scrollTop+L.clientHeight>=L.scrollHeight-20;
+  const lines=logPending.length>LOGLINES?logPending.slice(-LOGLINES):logPending; logPending=[];
+  L.appendChild(document.createTextNode(lines.join('\n')+'\n')); logN+=lines.length;
+  while(logN>LOGLINES&&L.firstChild){ logN-=(L.firstChild.textContent.match(/\n/g)||[]).length; L.removeChild(L.firstChild); }
+  if(atEnd) L.scrollTop=L.scrollHeight; };
+setDebug(debug);
+const addLog=lines=>{ for(const l of lines) logPending.push(l); if(logPending.length>LOGLINES*2) logPending=logPending.slice(-LOGLINES); if(debug===2&&!logTimer) logTimer=setTimeout(flushLog,250); };
+const status=s=>{ ST.textContent=s; if(loading) LST.textContent=s; const m=/([\d.]+) fps/.exec(s), w=/worst frame (\d+) ms/.exec(s); if(m) FPS.innerHTML=(+m[1]).toFixed(1)+' fps'+(w?'<div style="font-size:12px;color:'+(+w[1]>250?'#f66':'#9c9')+'">worst frame '+w[1]+' ms</div>':''); };
+w.onmessage=e=>{const d=e.data; if(d.t==='pcm') onPcm(d); else if(d.t==='progress') progress(d); else if(d.t==='log') addLog(d.lines); else if(d.t==='status') status(d.s); else if(d.t==='done'){B.disabled=true;}};
+w.onerror=e=>{ status('worker error: '+e.message); };
+B.onclick=()=>{w.terminate();status(ST.textContent+' — stopped by user');B.disabled=true;};
+const send=ev=>w.postMessage({t:'input',ev});
+const WORKLET=`class P extends AudioWorkletProcessor{ constructor(){ super(); this.q=[]; this.off=0; this.played=0; this.last=0;
+  this.port.onmessage=e=>{ this.q.push(e.data); if(this.q.length>48) this.q.shift(); }; }
+  process(_,outs){ const L=outs[0][0], R=outs[0][1]||L; for(let i=0;i<L.length;i++){ while(this.q.length&&this.off>=this.q[0].frames){ this.q.shift(); this.off=0; }
+      if(!this.q.length){ L[i]=0; R[i]=0; continue; } const c=this.q[0], k=this.off*c.ch; L[i]=c.d[k]; R[i]=c.ch>1?c.d[k+1]:c.d[k]; this.off++; this.played++; }
+    if(currentTime-this.last>0.04){ this.last=currentTime; this.port.postMessage(this.played); } return true; } }
+registerProcessor('aw-out',P);`;
+let actx=null, anode=null, aPlayed=0, aDropped=0, aRate=48000, aT0=0;
+const audioStart=async()=>{ if(actx) { if(actx.state!=='running') actx.resume(); return; }
+  actx=new AudioContext({sampleRate:aRate}); await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET],{type:'text/javascript'})));
+  anode=new AudioWorkletNode(actx,'aw-out',{outputChannelCount:[2]}); anode.connect(actx.destination);
+  anode.port.onmessage=e=>{ aPlayed=e.data; w.postMessage({t:'audio-played',frames:aPlayed+aDropped}); }; };
+const onPcm=d=>{ aRate=d.rate; const frames=d.d.length/d.ch;
+  if(anode&&actx.state==='running') anode.port.postMessage({d:d.d,ch:d.ch,frames},[d.d.buffer]);
+  else { if(!aT0) aT0=performance.now(); aDropped+=frames; }
+};
+setInterval(()=>{ if(!(anode&&actx.state==='running')&&aT0){ const wall=(performance.now()-aT0)/1000*aRate; w.postMessage({t:'audio-played',frames:Math.min(aDropped,wall)+aPlayed}); } },50);
+for(const ev of ['pointerdown','keydown']) C.addEventListener(ev,()=>{ audioStart().catch(e=>console.warn('audio',e)); });
+const pos=e=>{ const r=C.getBoundingClientRect(); return {x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))}; };
+const BTN={0:0,1:2,2:1};
+C.addEventListener('pointermove',e=>send({t:'move',...pos(e)}));
+C.addEventListener('pointerdown',e=>{ C.focus(); C.setPointerCapture(e.pointerId); send({t:'move',...pos(e)}); send({t:'down',b:BTN[e.button]??0,...pos(e)}); e.preventDefault(); });
+C.addEventListener('pointerup',e=>{ send({t:'up',b:BTN[e.button]??0,...pos(e)}); e.preventDefault(); });
+C.addEventListener('wheel',e=>{ send({t:'wheel',d:e.deltaY<0?120:-120,...pos(e)}); e.preventDefault(); },{passive:false});
+C.addEventListener('contextmenu',e=>e.preventDefault());
+const EXT=new Set([33,34,35,36,37,38,39,40,45,46,91,92,93,111,144]);
+const key=(e,down)=>{ if(e.keyCode===123||(e.ctrlKey&&e.keyCode===82)) return;
+  if(e.key==='>'||e.key==='<') return;
+  send({t:'key',vk:e.keyCode,down,rep:e.repeat,right:e.location===2,ext:EXT.has(e.keyCode)||e.location===2});
+  if(down){ const ch=e.key.length===1?e.key.charCodeAt(0):({Enter:13,Backspace:8,Tab:9,Escape:27})[e.key]; if(ch) send({t:'char',ch}); }
+  e.preventDefault(); };
+C.addEventListener('keydown',e=>key(e,true)); C.addEventListener('keyup',e=>key(e,false));
+C.focus();
+</script>
